@@ -14,7 +14,10 @@ from pathlib import Path
 import logging
 
 def train_ligand_binding_model(target_unit_pro_id,binding_db_path,output_path):
-    binddb = pd.read_csv(binding_db_path, sep="\t",header=0,low_memory=False,error_bad_lines=False)
+    try:
+        binddb = pd.read_csv(binding_db_path, sep="\t",header=0,low_memory=False,error_bad_lines=False)
+    except TypeError:
+        binddb = pd.read_csv(binding_db_path, sep="\t",header=0,low_memory=False,on_bad_lines='warn')
 
 
     d = binddb[binddb['UniProt (SwissProt) Primary ID of Target Chain']==target_unit_pro_id]
