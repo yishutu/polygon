@@ -41,6 +41,7 @@ from polygon.utils.custom_scoring_fcn import LogP
 from polygon.utils.custom_scoring_fcn import MW
 from polygon.utils.custom_scoring_fcn import TaniSim
 from polygon.utils.custom_scoring_fcn import LigandEfficancy
+from polygon.utils.custom_scoring_fcn import RDKitSAScorer
 
 
 
@@ -276,11 +277,11 @@ def build_scoring_function( scoring_definition,
                                                                             sigma=row.sigma,
                                                                             minimize=row.minimize))
         elif row.category == "sa":
-            scorers[name] = SAScorer( 
+            scorers[name] = RDKitSAScorer( 
                                     score_modifier=MinMaxGaussianModifier(mu=row.mu,
                                                                             sigma=row.sigma,
                                                                             minimize=row.minimize),
-                                    fscores=fscores  
+                                    #fscores=fscores  
                                     )
         elif row.category == "latent_distance":
             if vae_model == None:

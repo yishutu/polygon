@@ -4,6 +4,7 @@ import pandas as pd
 import math
 import gzip
 import pickle
+import sys
 
 #import xgboost as xgb
 import joblib as skjoblib
@@ -22,7 +23,7 @@ from rdkit.Chem import Descriptors
 from rdkit.DataStructs.cDataStructs import TanimotoSimilarity
 from rdkit import Chem
 from rdkit.Chem import rdMolDescriptors, Mol
-from rdkit.six import iteritems
+#from rdkit.six import iteritems
 #from rdkit.six.moves import cPickle
 import _pickle as cPickle
 from rdkit.Chem import Draw
@@ -410,7 +411,7 @@ class SAScorer(MoleculewiseScoringFunction):
         fps = fp.GetNonzeroElements()
         score1 = 0.
         nf = 0
-        for bitId, v in iteritems(fps):
+        for bitId, v in fps.iteritems():
             nf += v
             sfp = bitId
             score1 += self.fscores.get(sfp, -4) * v
@@ -457,6 +458,16 @@ class SAScorer(MoleculewiseScoringFunction):
             sascore = 1.0
         return sascore
         #return self.threshold/np.maximum(sascore, self.threshold)
+
+class RDKitSAScorer(MoleculewiseScoringFunction):
+    def __init__(self, score_modifier=None):
+        super().__init__(score_modifier=score_modifier)
+        sys.path.append(Chem.RDConfig.RDContribDir)
+        from SA_Score import sascorer
+        self._calculate = sascorer.calculateScore
+    def raw_score(self, smiles: str) -> float:
+        mol = Chem.MolFromSmiles(smiles)
+        return self._calculate(mol)
 
 class LogP(MoleculewiseScoringFunction):
     def __init__(self, score_modifier=None):
