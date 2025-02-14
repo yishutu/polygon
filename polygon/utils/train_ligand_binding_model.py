@@ -4,6 +4,7 @@ import numpy as np
 
 from rdkit import Chem
 from rdkit.Chem import AllChem
+from rdkit.Chem.rdFingerprintGenerator import GetMorganGenerator
 
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.model_selection import train_test_split
@@ -54,11 +55,12 @@ def train_ligand_binding_model(target_unit_pro_id,binding_db_path,output_path):
         logging.info('Less than 10 compound-target pairs. Not fitting a model')
         return 1
     # convert to fingerprint
+    morgan_generator = GetMorganGenerator(2,fpSize=2048)
     fps = []
     values = []
     for x,y in d[['smiles','metric_value']].values:
         try:
-            fp = AllChem.GetMorganFingerprintAsBitVect(Chem.MolFromSmiles(x),2)
+            fp = morgan_generator.GetFingerprint(Chem.MolFromSmiles(x))
         except:
             continue
         

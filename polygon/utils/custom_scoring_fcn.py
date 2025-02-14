@@ -17,7 +17,7 @@ from polygon.utils.scoring_function import MinMaxGaussianModifier
 
 # rdkit
 from rdkit import Chem
-from rdkit.Chem import AllChem, rdMolDescriptors, Descriptors
+from rdkit.Chem import AllChem, rdMolDescriptors, Descriptors, rdFingerprintGenerator
 from rdkit.ML.Descriptors import MoleculeDescriptors
 from rdkit.Chem import Descriptors
 from rdkit.DataStructs.cDataStructs import TanimotoSimilarity
@@ -40,13 +40,14 @@ class LigandEfficancy(MoleculewiseScoringFunction):
         super().__init__(score_modifier=score_modifier)
         with open(model_path,'rb') as handle:
             self.rfr = pickle.load(handle)
+        self.morgan_generator = rdFingerprintGenerator.GetMorganGenerator(2,fpSize=2048)
         
     def raw_score(self, smiles: str) -> float:
         # determine score from self.model and the given smiles string
         m = Chem.MolFromSmiles(smiles)
         mph = Chem.AddHs(m)
         N = mph.GetNumAtoms() - mph.GetNumHeavyAtoms()
-        fp = AllChem.GetMorganFingerprintAsBitVect(Chem.MolFromSmiles(smiles),2)
+        fp = self.morgan_generator.GetFingerprint(Chem.MolFromSmiles(smiles))
         fp = np.array([fp])
         pic50 = self.rfr.predict(fp)
         LE = 1.4*(pic50)/N
@@ -63,11 +64,12 @@ class ToxicityScore(MoleculewiseScoringFunction):
         self.names = ['MolWt','TPSA', 'NumHDonors','NumHAcceptors', 'MolLogP', 'HeavyAtomCount', 'NumRotatableBonds', 'RingCount']
         self.des_calc = MoleculeDescriptors.MolecularDescriptorCalculator(self.names)
         self.threshold = 250
+        self.morgan_generator = rdFingerprintGenerator.GetMorganGenerator(3,fpSize=4096)
         
     def raw_score(self, smiles: str) -> float:
         # determine score from self.model and the given smiles string
         mol = Chem.MolFromSmiles(smiles)
-        fp   = AllChem.GetMorganFingerprintAsBitVect(mol,3,nBits=4096)
+        fp = self.morgan_generator.GetFingerprint(mol)
         npfp = np.array( list(fp.ToBitString())).astype('int8')
         z2=self.des_calc.CalcDescriptors(mol)
         zf=np.concatenate( (npfp,z2) )
@@ -90,14 +92,15 @@ class DualTani(MoleculewiseScoringFunction):
         target_mol2  =Chem.MolFromSmiles(self.target2)
         #if target_mol is None:
         #    raise RuntimeError(f'The similarity target {target} is not a valid molecule.')
-        self.ref_fp1 = AllChem.GetMorganFingerprintAsBitVect(target_mol1,3,nBits=4096)
-        self.ref_fp2 = AllChem.GetMorganFingerprintAsBitVect(target_mol2,3,nBits=4096)
+        self.morgan_generator = rdFingerprintGenerator.GetMorganGenerator(3,fpSize=4096)
+        self.ref_fp1 = self.morgan_generator.GetFingerprint(target_mol1)
+        self.ref_fp2 = self.morgan_generator.GetFingerprint(target_mol2)
         self.threshold = thresh
         
     def raw_score(self, smiles: str) -> float:
         # determine score from self.model and the given smiles string
         mol = Chem.MolFromSmiles(smiles)
-        fp   = AllChem.GetMorganFingerprintAsBitVect(mol,3,nBits=4096)
+        fp   = self.morgan_generator.GetFingerprint(mol)
         tani1 = TanimotoSimilarity(fp, self.ref_fp1)
         tani2 = TanimotoSimilarity(fp, self.ref_fp2)
         tani = np.minimum(tani1, tani2)
@@ -122,7 +125,8 @@ class TaniSim(MoleculewiseScoringFunction):
         super().__init__(score_modifier=score_modifier)
         self.targets = smiles_targets
         self.mols = [Chem.MolFromSmiles(s) for s in self.targets]
-        self.fp_targets = [ AllChem.GetMorganFingerprintAsBitVect(mol,3,nBits=4096) for mol in self.mols]
+        self.morgan_generator = rdFingerprintGenerator.GetMorganGenerator(3,fpSize=4096)
+        self.fp_targets = [ self.morgan_generator.GetFingerprint(mol) for mol in self.mols]
         if n_top is None:
             n_top = len(self.targets)
         self.n_top=int(n_top)
@@ -131,7 +135,7 @@ class TaniSim(MoleculewiseScoringFunction):
     def raw_score(self, smiles):
         """ Ge distance to set """
         mol = Chem.MolFromSmiles(smiles)
-        fp =  AllChem.GetMorganFingerprintAsBitVect(mol,3,nBits=4096)
+        fp =  self.morgan_generator.GetFingerprint(mol)
         tani = np.array([TanimotoSimilarity(fp, fp_targets_i) for fp_targets_i in self.fp_targets])
         if self.n_top:
             tani.sort()
@@ -194,11 +198,12 @@ class CellLine(MoleculewiseScoringFunction):
             model_path = '../../data/MODEL_allData_DNAmeth_iterations23.pickle'
         with open(model_path,'rb') as handle:
             self.mlp = pickle.load(handle, encoding='Latin1')
-        
+        self.morgan_generator = rdFingerprintGenerator.GetMorganGenerator(2,fpSize=2048)
+
     def raw_score(self, smiles: str) -> float:
         # determine score from self.model and the given smiles string
         d = Chem.MolFromSmiles(smiles)
-        fingerprint = list(SimilarityMaps.GetMorganFingerprint(d, fpType='bv',radius=2))
+        fingerprint = list(self.morgan_generator.GetFingerprint(d))
         X = fingerprint + self.cellline_cnv
         X = np.asarray(X).reshape(1,-1)
         preds = self.mlp.predict(X)[0]
@@ -211,6 +216,7 @@ class LigandSets(MoleculewiseScoringFunction):
     """
     def __init__(self, data_target1, score_modifier):
         super().__init__(score_modifier=score_modifier)
+        self.morgan_generator = rdFingerprintGenerator.GetMorganGenerator(3,fpSize=4096)
 
         print('we are now loading:', data_target1)
         self.data1 = pd.read_csv(data_target1, index_col=None, header=None )
@@ -220,7 +226,7 @@ class LigandSets(MoleculewiseScoringFunction):
 
         for s in self.smiles1:
             mol = Chem.MolFromSmiles(s)
-            self.fp1.append(AllChem.GetMorganFingerprintAsBitVect(mol,3,nBits=4096) )
+            self.fp1.append(self.morgan_generator.GetFingerprint(mol))
 
         #self.threshold = thresh
         print(self.data1.shape)
@@ -228,7 +234,7 @@ class LigandSets(MoleculewiseScoringFunction):
     def raw_score(self, smiles: str) -> float:
         # determine score from self.model and the given smiles string
         mol = Chem.MolFromSmiles(smiles)
-        fp   = AllChem.GetMorganFingerprintAsBitVect(mol,3,nBits=4096)
+        fp   = self.morgan_generator.GetFingerprint(mol)
         scores=[]
         for fps in self.fp1:
             scores.append( TanimotoSimilarity(fp, fps) )
@@ -247,6 +253,7 @@ class LigandSets_dual(MoleculewiseScoringFunction):
     """
     def __init__(self, data_target1, data_target2, thresh):
         super().__init__()
+        self.morgan_generator = rdFingerprintGenerator.GetMorganGenerator(3,fpSize=4096)
 
         print('we are now loading:', data_target1)
         self.data1 = pd.read_csv(data_target1, index_col=None, header=None )
@@ -263,12 +270,12 @@ class LigandSets_dual(MoleculewiseScoringFunction):
 
         for s in self.smiles1:
             mol = Chem.MolFromSmiles(s)
-            self.fp1.append(AllChem.GetMorganFingerprintAsBitVect(mol,3,nBits=4096) )
+            self.fp1.append(self.morgan_generator.GetFingerprint(mol))
 
 
         for s in self.smiles2:
             mol = Chem.MolFromSmiles(s)
-            self.fp2.append(AllChem.GetMorganFingerprintAsBitVect(mol,3,nBits=4096) )
+            self.fp2.append(self.morgan_generator.GetFingerprint(mol))
 
         self.threshold = thresh
         print(self.data1.shape)
@@ -277,7 +284,7 @@ class LigandSets_dual(MoleculewiseScoringFunction):
     def raw_score(self, smiles: str) -> float:
         # determine score from self.model and the given smiles string
         mol = Chem.MolFromSmiles(smiles)
-        fp   = AllChem.GetMorganFingerprintAsBitVect(mol,3,nBits=4096)
+        fp   = self.morgan_generator.GetFingerprint(mol)
         maxs2 = 0
         for fps in self.fp2:
             tani2 = TanimotoSimilarity(fp, fps)
@@ -300,6 +307,7 @@ class LigandSets_truel(MoleculewiseScoringFunction):
     """
     def __init__(self, data_target1, data_target2, data_target3, thresh):
         super().__init__()
+        self.morgan_generator = rdFingerprintGenerator.GetMorganGenerator(3,fpSize=4096)
 
         print('we are now loading:', data_target1)
         self.data1 = pd.read_csv(data_target1, index_col=None, header=None )
@@ -321,15 +329,15 @@ class LigandSets_truel(MoleculewiseScoringFunction):
 
         for s in self.smiles1:
             mol = Chem.MolFromSmiles(s)
-            self.fp1.append(AllChem.GetMorganFingerprintAsBitVect(mol,3,nBits=4096) )
+            self.fp1.append(self.morgan_generator.GetFingerprint(mol))
 
         for s in self.smiles2:
             mol = Chem.MolFromSmiles(s)
-            self.fp2.append(AllChem.GetMorganFingerprintAsBitVect(mol,3,nBits=4096) )
+            self.fp2.append(self.morgan_generator.GetFingerprint(mol))
 
         for s in self.smiles3:
             mol = Chem.MolFromSmiles(s)
-            self.fp3.append(AllChem.GetMorganFingerprintAsBitVect(mol,3,nBits=4096) )
+            self.fp3.append(self.morgan_generator.GetFingerprint(mol))
 
 
         self.threshold = thresh
@@ -337,7 +345,7 @@ class LigandSets_truel(MoleculewiseScoringFunction):
     def raw_score(self, smiles: str) -> float:
         # determine score from self.model and the given smiles string
         mol = Chem.MolFromSmiles(smiles)
-        fp   = AllChem.GetMorganFingerprintAsBitVect(mol,3,nBits=4096)
+        fp   = self.morgan_generator.GetFingerprint(mol)
 
         maxs1 = 0
         for fps in self.fp1:
@@ -369,18 +377,20 @@ class CustomTani(MoleculewiseScoringFunction):
     """
     def __init__(self, target_string):
         super().__init__()
+        self.morgan_generator = rdFingerprintGenerator.GetMorganGenerator(3,fpSize=4096)
+
         #self.target ='CC(C)CC1=CC=C(C=C1)C(C)C(O)=O'
         self.target =target_string
         target_mol = Chem.MolFromSmiles(self.target)
         if target_mol is None:
             raise RuntimeError(f'The similarity target {target} is not a valid molecule.')
-        self.ref_fp = AllChem.GetMorganFingerprintAsBitVect(target_mol,3,nBits=4096)
+        self.ref_fp = self.morgan_generator.GetFingerprint(target_mol)
         self.threshold = 0.8
         
     def raw_score(self, smiles: str) -> float:
         # determine score from self.model and the given smiles string
         mol = Chem.MolFromSmiles(smiles)
-        fp   = AllChem.GetMorganFingerprintAsBitVect(mol,3,nBits=4096)
+        fp   = self.morgan_generator.GetFingerprint(mol)
         tani = TanimotoSimilarity(fp, self.ref_fp)
         return np.minimum(tani, self.threshold)/self.threshold
 
@@ -389,6 +399,8 @@ class CustomTani(MoleculewiseScoringFunction):
 class SAScorer(MoleculewiseScoringFunction):
     def __init__(self, score_modifier, fscores=None):
         super().__init__(score_modifier=score_modifier)
+        self.morgan_generator = rdFingerprintGenerator.GetMorganGenerator(2,fpSize=2048)
+
         if fscores is None:
             fscores = '../../data/fpscores.pkl.gz'
         self.fscores = cPickle.load(gzip.open(fscores ))
@@ -407,7 +419,7 @@ class SAScorer(MoleculewiseScoringFunction):
     def raw_score(self, smiles: str) -> float:
         # determine score from self.model and the given smiles string
         m = Chem.MolFromSmiles(smiles)
-        fp = rdMolDescriptors.GetMorganFingerprint(m,2)  # <- 2 is the *radius* of the circular fingerprint
+        fp = self.morgan_generator(m)
         fps = fp.GetNonzeroElements()
         score1 = 0.
         nf = 0

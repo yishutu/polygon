@@ -18,7 +18,7 @@ from rdkit import Chem
 from rdkit.Chem.Fingerprints import FingerprintMols
 from rdkit.Chem.Scaffolds.MurckoScaffold import MurckoScaffoldSmilesFromSmiles
 from rdkit.Chem.Scaffolds.MurckoScaffold import MakeScaffoldGeneric
-from rdkit.Chem.rdMolDescriptors import GetMorganFingerprint
+from rdkit.Chem.rdFingerprintGenerator import GetMorganGenerator
 from rdkit.SimDivFilters.rdSimDivPickers import MaxMinPicker
 
 #from guacamol.assess_goal_directed_generation import assess_goal_directed_generation
@@ -195,7 +195,8 @@ def pick_diverse_set(smiles,n_diverse=100):
 
 
     ms = smiles
-    fps = [GetMorganFingerprint(Chem.MolFromSmiles(x),3) for x in ms]
+    morgan_gen = GetMorganGenerator(3,fpSize=2048)
+    fps = [morgan_gen.GetFingerprint(Chem.MolFromSmiles(x)) for x in ms]
     nfps = len(fps)
     picker = MaxMinPicker()
     logger.debug(f'Len FPS: {nfps}')
